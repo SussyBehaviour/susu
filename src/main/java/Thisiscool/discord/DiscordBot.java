@@ -7,6 +7,7 @@ import static Thisiscool.utils.Checks.*;
 import java.util.function.Predicate;
 
 import Thisiscool.StuffForUs.net.LegenderyCum;
+import Thisiscool.config.Config;
 import Thisiscool.listeners.LegenderyCumEvents.DiscordMessageEvent;
 import Thisiscool.listeners.LegenderyCumEvents.ListRequest;
 import Thisiscool.utils.PageIterator;
@@ -46,12 +47,14 @@ public class DiscordBot {
     public static GuildMessageChannel votekickChannel;
     public static GuildMessageChannel reportChannel;
     public static boolean connected;
+
     public static Mono<String> getUserNameById(long userId) {
         Snowflake snowflake = Snowflake.of(userId);
         return gateway.getUserById(snowflake)
                 .map(User::getUsername)
                 .switchIfEmpty(Mono.just("notlinked"));
     }
+
     public static void connect() {
         try {
             HttpResources.set(LoopResources.create("d4j-http", 4, true));
@@ -90,7 +93,6 @@ public class DiscordBot {
                 var member = event.getMember().orElse(null);
                 if (member == null || member.isBot())
                     return;
-
                 message.getChannel()
                         .map(channel -> new MessageContext(message, member, channel))
                         .subscribe(context -> {
@@ -115,8 +117,10 @@ public class DiscordBot {
                 // Prevent commands from being sent to the game
                 if (message.getContent().startsWith(discordConfig.prefix))
                     return;
+                if (message.getChannelId().asLong() != discordConfig.Chat)
+                    return;
 
-                var server = discordConfig.serverToChannel.findKey(message.getChannelId().asLong(), false);
+                var server = discordConfig.Chat;
                 if (server == null)
                     return;
 
@@ -132,11 +136,13 @@ public class DiscordBot {
                                 .filter(Predicate.not(Predicate.isEqual(Role.DEFAULT_COLOR)))
                                 .last(Color.WHITE))
                         .switchIfEmpty(Mono.fromRunnable(() -> LegenderyCum
-                                .send(new DiscordMessageEvent(server, member.getDisplayName(), message.getContent()))))
+                                .send(new DiscordMessageEvent(Config.getMode().displayName, member.getDisplayName(),
+                                        message.getContent()))))
                         .subscribe(TupleUtils.consumer((role,
-                                color) -> LegenderyCum.send(new DiscordMessageEvent(server, role.getName(),
-                                        Integer.toHexString(color.getRGB()), member.getDisplayName(),
-                                        message.getContent()))));
+                                color) -> LegenderyCum
+                                        .send(new DiscordMessageEvent(Config.getMode().displayName, role.getName(),
+                                                Integer.toHexString(color.getRGB()), member.getDisplayName(),
+                                                message.getContent()))));
             });
 
             gateway.on(ButtonInteractionEvent.class).subscribe(event -> {
@@ -144,20 +150,21 @@ public class DiscordBot {
                 if (content.length < 3)
                     return;
 
-                LegenderyCum.request(new ListRequest(content[0], content[1], Strings.parseInt(content[2])), response -> {
-                    var embed = EmbedCreateSpec.builder();
+                LegenderyCum.request(new ListRequest(content[0], content[1], Strings.parseInt(content[2])),
+                        response -> {
+                            var embed = EmbedCreateSpec.builder();
 
-                    switch (content[0]) {
-                        case "maps" -> PageIterator.formatMapsPage(embed, response);
-                        case "players" -> PageIterator.formatPlayersPage(embed, response);
+                            switch (content[0]) {
+                                case "maps" -> PageIterator.formatMapsPage(embed, response);
+                                case "players" -> PageIterator.formatPlayersPage(embed, response);
 
-                        default -> throw new IllegalStateException();
-                    }
+                                default -> throw new IllegalStateException();
+                            }
 
-                    event.edit().withEmbeds(embed.build())
-                            .withComponents(PageIterator.createPageButtons(content[0], content[1], response))
-                            .subscribe();
-                });
+                            event.edit().withEmbeds(embed.build())
+                                    .withComponents(PageIterator.createPageButtons(content[0], content[1], response))
+                                    .subscribe();
+                        });
             });
 
             gateway.on(SelectMenuInteractionEvent.class).subscribe(event -> {
